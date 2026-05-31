@@ -16,7 +16,7 @@ public static class PortPanel
         var table = new Table()
             .NoBorder()
             .AddColumn(new TableColumn("[dim]Cargo[/]").Width(14))
-            .AddColumn(new TableColumn("[dim]Ships[/]").Width(22))
+            .AddColumn(new TableColumn("[dim]Ships[/]").Width(120))
             .AddColumn(new TableColumn("[dim]Avail[/]").Width(7))
             .AddColumn(new TableColumn("[dim]Buy $[/]").Width(8))
             .AddColumn(new TableColumn("[dim]Sell $[/]").Width(8))

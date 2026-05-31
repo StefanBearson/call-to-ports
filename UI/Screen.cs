@@ -8,6 +8,9 @@ namespace porter_of_call.UI;
 
 public class Screen
 {
+    private const int PreferredWindowWidth = 132;
+    private const int PreferredWindowHeight = 42;
+
     private readonly GameEngine _engine;
     private readonly GameSaveStore _saveStore = new();
 
@@ -37,19 +40,21 @@ public class Screen
 
     public void Run()
     {
+        PrepareWindow();
+
         while (true)
         {
             CommandAction action = WaitForCommand();
 
             if (action == CommandAction.Victory)
             {
-                AnsiConsole.Clear();
+                ClearScreen();
                 AnsiConsole.MarkupLine("\n[bold green]🎉 VICTORY! You reached $1,000,000 net worth![/]");
                 break;
             }
             if (action == CommandAction.GameOver)
             {
-                AnsiConsole.Clear();
+                ClearScreen();
                 AnsiConsole.MarkupLine("\n[bold red]💀 GAME OVER — Bankrupt.[/]");
                 break;
             }
@@ -63,7 +68,7 @@ public class Screen
                 continue;
             }
 
-            AnsiConsole.Clear();
+            ClearScreen();
             ExecuteCommand(action);
         }
     }
@@ -75,7 +80,7 @@ public class Screen
         CommandAction action = CommandAction.None;
         var dashboard = CreateDashboardLayout();
 
-        AnsiConsole.Clear();
+        ClearScreen();
         AnsiConsole.Live(dashboard)
             .AutoClear(true)
             .Start(ctx =>
@@ -200,7 +205,7 @@ public class Screen
             new Markup("[bold cyan]CALL TO PORTS[/]"),
             new Markup($"[dim]Time[/] [yellow]{player.ClockText}[/]"),
             new Markup($"[dim]State[/] [{(_engine.IsPaused ? "yellow" : "green")}]{(_engine.IsPaused ? "Paused" : "Running")}[/]"),
-            new Markup("[dim]Rate[/] [dim]1m=1d[/]"));
+            new Markup($"[dim]View[/] [dim]{PreferredWindowWidth}x{PreferredWindowHeight}[/]"));
         headerGrid.AddRow(
             new Markup($"[dim]Balance[/] [green]${player.Balance:N0}[/]"),
             new Markup($"[dim]Net Worth[/] [cyan]${player.NetWorth:N0}[/]"),
@@ -238,7 +243,7 @@ public class Screen
         footerGrid.AddRow(
             new Markup("[dim][[C]][/] help"),
             new Markup("[dim][[Q]][/] quit"),
-            new Markup(""),
+            new Markup(GetViewportStatusMarkup()),
             new Markup(""),
             new Markup(""),
             new Markup(""));
@@ -511,7 +516,7 @@ public class Screen
 
     private void PrintHelp()
     {
-        Console.Clear();
+        ClearScreen();
         var table = new Table()
             .Title("[bold cyan]COMMAND REFERENCE[/]")
             .Border(TableBorder.Rounded)
@@ -533,6 +538,7 @@ public class Screen
         table.AddRow("[bold]Q[/] quit",   "Exit the game");
 
         AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine($"\n[dim]Target viewport: {PreferredWindowWidth}x{PreferredWindowHeight} for the most consistent layout.[/]");
 
         AnsiConsole.MarkupLine("\n[bold]CARGO TYPES[/]");
         var cargoTable = new Table()
@@ -556,7 +562,7 @@ public class Screen
 
     private void PrintFleet()
     {
-        Console.Clear();
+        ClearScreen();
         foreach (var ship in _engine.Player.Fleet)
         {
             AnsiConsole.MarkupLine($"\n[bold yellow]{ship.Spec.Symbol} {ship.Name}[/] " +
@@ -586,72 +592,95 @@ public class Screen
 
     private void PrintWorldPrices()
     {
-        Console.Clear();
+        ClearScreen();
 
         var table = new Table()
             .Title("[bold cyan]WORLD PRICES[/]")
             .Border(TableBorder.Rounded)
             .Expand()
-            .AddColumn("Goods")
-            .AddColumn("Category")
-            .AddColumn("Best Buy")
-            .AddColumn("Best Sell")
-            .AddColumn("World")
-            .AddColumn("Trend")
-            .AddColumn("Spread")
-            .AddColumn("Stock")
-            .AddColumn("Ships");
+            .AddColumn(new TableColumn("").Width(4).Centered())
+            .AddColumn(new TableColumn("Goods").Width(14).NoWrap())
+            .AddColumn(new TableColumn("Best Buy").Width(20).NoWrap())
+            .AddColumn(new TableColumn("Best Sell").Width(20).NoWrap())
+            .AddColumn(new TableColumn("World").Width(7).NoWrap())
+            .AddColumn(new TableColumn("Trend").Width(8).NoWrap())
+            .AddColumn(new TableColumn("Spread").Width(9).NoWrap())
+            .AddColumn(new TableColumn("Stock").Width(7).NoWrap())
+            .AddColumn(new TableColumn("Ships").Width(26).NoWrap());
 
-        foreach (var cargo in CargoDefinitions.All.OrderBy(c => c.Category).ThenBy(c => c.Name))
+        bool firstCategory = true;
+        foreach (var group in CargoDefinitions.All
+                     .OrderBy(c => c.Category)
+                     .ThenBy(c => c.Name)
+                     .GroupBy(c => c.Category))
         {
-            var buyMarket = PortDefinitions.All
-                .Select(port => new
-                {
-                    Port = port,
-                    Buy = _engine.Market.BuyPrice(port, cargo),
-                    Sell = _engine.Market.SellPrice(port, cargo),
-                    Stock = _engine.Market.AvailableTonnes(port, cargo)
-                })
-                .ToList();
-
-            var bestBuy = buyMarket.OrderBy(entry => entry.Buy).First();
-            var bestSell = buyMarket.OrderByDescending(entry => entry.Sell).First();
-            double spread = bestSell.Sell - bestBuy.Buy;
-            double worldDemand = _engine.Market.GetGlobalDemand(cargo.Id);
-            double trend = _engine.Market.GetTrend(cargo.Id);
-            string spreadMarkup = spread >= 0
-                ? $"[green]+${spread:N0}[/]"
-                : $"[red]${spread:N0}[/]";
-            string worldMarkup = worldDemand >= 1.10
-                ? $"[red]{worldDemand:0.00}x[/]"
-                : worldDemand <= 0.92
-                    ? $"[green]{worldDemand:0.00}x[/]"
-                    : $"[yellow]{worldDemand:0.00}x[/]";
-            string trendMarkup = trend >= 0.01
-                ? $"[red]▲ {trend:P0}[/]"
-                : trend <= -0.01
-                    ? $"[green]▼ {Math.Abs(trend):P0}[/]"
-                    : "[yellow]→ flat[/]";
-            string stockMarkup = bestBuy.Stock >= 1000
-                ? $"[green]{bestBuy.Stock}t[/]"
-                : bestBuy.Stock >= 300
-                    ? $"[yellow]{bestBuy.Stock}t[/]"
-                    : $"[red]{bestBuy.Stock}t[/]";
+            if (!firstCategory)
+                table.AddEmptyRow();
 
             table.AddRow(
-                $"{cargo.Icon} {cargo.Name}",
-                cargo.Category.ToString(),
-                $"{bestBuy.Port.Name} [dim]${bestBuy.Buy:N0}[/]",
-                $"{bestSell.Port.Name} [dim]${bestSell.Sell:N0}[/]",
-                worldMarkup,
-                trendMarkup,
-                spreadMarkup,
-                stockMarkup,
-                Markup.Escape(ShipTypeDisplay.FormatList(cargo.CompatibleShips, "/")));
+                "",
+                $"[bold cyan]{FormatCategoryLabel(group.Key)}[/]",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "");
+
+            foreach (var cargo in group)
+            {
+                var buyMarket = PortDefinitions.All
+                    .Select(port => new
+                    {
+                        Port = port,
+                        Buy = _engine.Market.BuyPrice(port, cargo),
+                        Sell = _engine.Market.SellPrice(port, cargo),
+                        Stock = _engine.Market.AvailableTonnes(port, cargo)
+                    })
+                    .ToList();
+
+                var bestBuy = buyMarket.OrderBy(entry => entry.Buy).First();
+                var bestSell = buyMarket.OrderByDescending(entry => entry.Sell).First();
+                double spread = bestSell.Sell - bestBuy.Buy;
+                double worldDemand = _engine.Market.GetGlobalDemand(cargo.Id);
+                double trend = _engine.Market.GetTrend(cargo.Id);
+                string spreadMarkup = spread >= 0
+                    ? $"[green]+${spread:N0}[/]"
+                    : $"[red]${spread:N0}[/]";
+                string worldMarkup = worldDemand >= 1.10
+                    ? $"[red]{worldDemand:0.00}x[/]"
+                    : worldDemand <= 0.92
+                        ? $"[green]{worldDemand:0.00}x[/]"
+                        : $"[yellow]{worldDemand:0.00}x[/]";
+                string trendMarkup = trend >= 0.01
+                    ? $"[red]▲ {trend:P0}[/]"
+                    : trend <= -0.01
+                        ? $"[green]▼ {Math.Abs(trend):P0}[/]"
+                        : "[yellow]→ flat[/]";
+                string stockMarkup = bestBuy.Stock >= 1000
+                    ? $"[green]{bestBuy.Stock}t[/]"
+                    : bestBuy.Stock >= 300
+                        ? $"[yellow]{bestBuy.Stock}t[/]"
+                        : $"[red]{bestBuy.Stock}t[/]";
+
+                table.AddRow(
+                    FormatIconCell(cargo.Icon),
+                    Markup.Escape(cargo.Name),
+                    $"{bestBuy.Port.Name} [dim]${bestBuy.Buy:N0}[/]",
+                    $"{bestSell.Port.Name} [dim]${bestSell.Sell:N0}[/]",
+                    worldMarkup,
+                    trendMarkup,
+                    spreadMarkup,
+                    stockMarkup,
+                    Markup.Escape(FormatShipTypesCompact(cargo.CompatibleShips)));
+            }
+
+            firstCategory = false;
         }
 
         AnsiConsole.Write(table);
-        AnsiConsole.MarkupLine("\n[dim]Prices shown are current global buy/sell quotes. Press Enter or Esc to go back.[/]");
+        AnsiConsole.MarkupLine("\n[dim]Press Enter or Esc to go back.[/]");
         WaitForBack();
     }
 
@@ -666,7 +695,7 @@ public class Screen
 
         while (true)
         {
-            Console.Clear();
+            ClearScreen();
 
             int start = Math.Max(0, Math.Min(index - pageSize / 2, Math.Max(0, choices.Count - pageSize)));
             int end = Math.Min(choices.Count, start + pageSize);
@@ -721,7 +750,7 @@ public class Screen
 
         while (true)
         {
-            Console.Clear();
+            ClearScreen();
             AnsiConsole.Write(new Panel(new Markup(message))
             {
                 Border = BoxBorder.Rounded,
@@ -757,7 +786,7 @@ public class Screen
 
         while (true)
         {
-            Console.Clear();
+            ClearScreen();
             AnsiConsole.Write(new Panel(new Markup($"{title}\n[bold yellow]{Markup.Escape(buffer)}[/]"))
             {
                 Border = BoxBorder.Rounded,
@@ -803,6 +832,93 @@ public class Screen
             var key = Console.ReadKey(intercept: true).Key;
             if (key is ConsoleKey.Enter or ConsoleKey.Escape)
                 return;
+        }
+    }
+
+    private static string GetViewportStatusMarkup()
+    {
+        return Console.WindowWidth == PreferredWindowWidth && Console.WindowHeight == PreferredWindowHeight
+            ? "[green]fixed viewport active[/]"
+            : $"[yellow]best at {PreferredWindowWidth}x{PreferredWindowHeight}[/]";
+    }
+
+    private static string FormatCategoryLabel(CargoCategory category) => category switch
+    {
+        CargoCategory.Agricultural => "Agricultural",
+        CargoCategory.Energy => "Energy",
+        CargoCategory.Metals => "Metals",
+        CargoCategory.Forestry => "Forestry",
+        CargoCategory.Manufactured => "Manufactured",
+        _ => category.ToString()
+    };
+
+    private static string FormatShipTypesCompact(IEnumerable<ShipType> types) =>
+        string.Join("/", types.Select(type => type switch
+        {
+            ShipType.Clipper => "Clip",
+            ShipType.Freighter => "Frt",
+            ShipType.ContainerShip => "Cont",
+            ShipType.BulkCarrier => "Bulk",
+            ShipType.Tanker => "Tank",
+            ShipType.Reefer => "Reef",
+            ShipType.Coaster => "Coast",
+            ShipType.Multipurpose => "Multi",
+            ShipType.FeederContainer => "Feed",
+            ShipType.HeavyFreighter => "Heavy",
+            ShipType.OreCarrier => "Ore",
+            ShipType.LogCarrier => "Log",
+            ShipType.ChemicalTanker => "Chem",
+            ShipType.GasCarrier => "Gas",
+            ShipType.FastReefer => "Fast",
+            ShipType.RoRo => "RoRo",
+            _ => type.ToString()
+        }));
+
+    private static string FormatIconCell(string icon) =>
+        Markup.Escape(icon);
+
+    private static void ClearScreen()
+    {
+        PrepareWindow();
+        AnsiConsole.Clear();
+    }
+
+    private static void PrepareWindow()
+    {
+        Console.CursorVisible = false;
+
+        if (Console.WindowWidth == PreferredWindowWidth && Console.WindowHeight == PreferredWindowHeight)
+            return;
+
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        try
+        {
+            if (Console.BufferWidth < PreferredWindowWidth || Console.BufferHeight < PreferredWindowHeight)
+            {
+                int bufferWidth = Math.Max(Console.BufferWidth, PreferredWindowWidth);
+                int bufferHeight = Math.Max(Console.BufferHeight, PreferredWindowHeight);
+                Console.SetBufferSize(bufferWidth, bufferHeight);
+            }
+
+            int width = Math.Min(PreferredWindowWidth, Console.LargestWindowWidth);
+            int height = Math.Min(PreferredWindowHeight, Console.LargestWindowHeight);
+
+            if (Console.WindowWidth != width || Console.WindowHeight != height)
+                Console.SetWindowSize(width, height);
+
+            if (Console.BufferWidth != width || Console.BufferHeight != height)
+                Console.SetBufferSize(width, height);
+        }
+        catch (IOException)
+        {
+        }
+        catch (PlatformNotSupportedException)
+        {
+        }
+        catch (ArgumentOutOfRangeException)
+        {
         }
     }
 }
