@@ -594,19 +594,40 @@ public class Screen
     {
         ClearScreen();
 
+        int viewportWidth = GetViewportWidth();
+        bool showMarketSignals = viewportWidth >= 100;
+        bool showStock = viewportWidth >= 116;
+        bool showShips = viewportWidth >= 132;
+        int columnCount = 4
+            + (showMarketSignals ? 3 : 1)
+            + (showStock ? 1 : 0)
+            + (showShips ? 1 : 0);
+
         var table = new Table()
             .Title("[bold cyan]WORLD PRICES[/]")
             .Border(TableBorder.Rounded)
             .Expand()
             .AddColumn(new TableColumn("").Width(4).Centered())
-            .AddColumn(new TableColumn("Goods").Width(14).NoWrap())
-            .AddColumn(new TableColumn("Best Buy").Width(20).NoWrap())
-            .AddColumn(new TableColumn("Best Sell").Width(20).NoWrap())
-            .AddColumn(new TableColumn("World").Width(7).NoWrap())
-            .AddColumn(new TableColumn("Trend").Width(8).NoWrap())
-            .AddColumn(new TableColumn("Spread").Width(9).NoWrap())
-            .AddColumn(new TableColumn("Stock").Width(7).NoWrap())
-            .AddColumn(new TableColumn("Ships").Width(26).NoWrap());
+            .AddColumn(new TableColumn("Goods").Width(showShips ? 14 : 18).NoWrap())
+            .AddColumn(new TableColumn("Best Buy").Width(showShips ? 20 : 22).NoWrap())
+            .AddColumn(new TableColumn("Best Sell").Width(showShips ? 20 : 22).NoWrap());
+
+        if (showMarketSignals)
+        {
+            table.AddColumn(new TableColumn("World").Width(7).NoWrap());
+            table.AddColumn(new TableColumn("Trend").Width(8).NoWrap());
+            table.AddColumn(new TableColumn("Spread").Width(9).NoWrap());
+        }
+        else
+        {
+            table.AddColumn(new TableColumn("Spread").Width(9).NoWrap());
+        }
+
+        if (showStock)
+            table.AddColumn(new TableColumn("Stock").Width(7).NoWrap());
+
+        if (showShips)
+            table.AddColumn(new TableColumn("Ships").Width(26).NoWrap());
 
         bool firstCategory = true;
         foreach (var group in CargoDefinitions.All
@@ -617,16 +638,9 @@ public class Screen
             if (!firstCategory)
                 table.AddEmptyRow();
 
-            table.AddRow(
-                "",
-                $"[bold cyan]{FormatCategoryLabel(group.Key)}[/]",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "");
+            var categoryRow = Enumerable.Repeat(string.Empty, columnCount).ToArray();
+            categoryRow[1] = $"[bold cyan]{FormatCategoryLabel(group.Key)}[/]";
+            table.AddRow(categoryRow);
 
             foreach (var cargo in group)
             {
@@ -664,22 +678,42 @@ public class Screen
                         ? $"[yellow]{bestBuy.Stock}t[/]"
                         : $"[red]{bestBuy.Stock}t[/]";
 
-                table.AddRow(
+                var row = new List<string>
+                {
                     FormatIconCell(cargo.Icon),
                     Markup.Escape(cargo.Name),
                     $"{bestBuy.Port.Name} [dim]${bestBuy.Buy:N0}[/]",
-                    $"{bestSell.Port.Name} [dim]${bestSell.Sell:N0}[/]",
-                    worldMarkup,
-                    trendMarkup,
-                    spreadMarkup,
-                    stockMarkup,
-                    Markup.Escape(FormatShipTypesCompact(cargo.CompatibleShips)));
+                    $"{bestSell.Port.Name} [dim]${bestSell.Sell:N0}[/]"
+                };
+
+                if (showMarketSignals)
+                {
+                    row.Add(worldMarkup);
+                    row.Add(trendMarkup);
+                    row.Add(spreadMarkup);
+                }
+                else
+                {
+                    row.Add(spreadMarkup);
+                }
+
+                if (showStock)
+                    row.Add(stockMarkup);
+
+                if (showShips)
+                    row.Add(Markup.Escape(FormatShipTypesCompact(cargo.CompatibleShips)));
+
+                table.AddRow(row.ToArray());
             }
 
             firstCategory = false;
         }
 
         AnsiConsole.Write(table);
+
+        if (!showShips)
+            AnsiConsole.MarkupLine($"\n[dim]Compact layout active for {viewportWidth}-column terminals. Full layout is best at {PreferredWindowWidth}x{PreferredWindowHeight}.[/]");
+
         AnsiConsole.MarkupLine("\n[dim]Press Enter or Esc to go back.[/]");
         WaitForBack();
     }
@@ -837,9 +871,10 @@ public class Screen
 
     private static string GetViewportStatusMarkup()
     {
-        return Console.WindowWidth == PreferredWindowWidth && Console.WindowHeight == PreferredWindowHeight
+        var (width, height) = GetViewportSize();
+        return width == PreferredWindowWidth && height == PreferredWindowHeight
             ? "[green]fixed viewport active[/]"
-            : $"[yellow]best at {PreferredWindowWidth}x{PreferredWindowHeight}[/]";
+            : $"[yellow]{width}x{height} active[/]";
     }
 
     private static string FormatCategoryLabel(CargoCategory category) => category switch
@@ -887,7 +922,8 @@ public class Screen
     {
         Console.CursorVisible = false;
 
-        if (Console.WindowWidth == PreferredWindowWidth && Console.WindowHeight == PreferredWindowHeight)
+        var (width, height) = GetViewportSize();
+        if (width == PreferredWindowWidth && height == PreferredWindowHeight)
             return;
 
         if (!OperatingSystem.IsWindows())
@@ -902,14 +938,14 @@ public class Screen
                 Console.SetBufferSize(bufferWidth, bufferHeight);
             }
 
-            int width = Math.Min(PreferredWindowWidth, Console.LargestWindowWidth);
-            int height = Math.Min(PreferredWindowHeight, Console.LargestWindowHeight);
+            int targetWidth = Math.Min(PreferredWindowWidth, Console.LargestWindowWidth);
+            int targetHeight = Math.Min(PreferredWindowHeight, Console.LargestWindowHeight);
 
-            if (Console.WindowWidth != width || Console.WindowHeight != height)
-                Console.SetWindowSize(width, height);
+            if (Console.WindowWidth != targetWidth || Console.WindowHeight != targetHeight)
+                Console.SetWindowSize(targetWidth, targetHeight);
 
-            if (Console.BufferWidth != width || Console.BufferHeight != height)
-                Console.SetBufferSize(width, height);
+            if (Console.BufferWidth != targetWidth || Console.BufferHeight != targetHeight)
+                Console.SetBufferSize(targetWidth, targetHeight);
         }
         catch (IOException)
         {
@@ -921,4 +957,25 @@ public class Screen
         {
         }
     }
+
+    private static (int Width, int Height) GetViewportSize()
+    {
+        try
+        {
+            int width = Console.WindowWidth;
+            int height = Console.WindowHeight;
+            if (width > 0 && height > 0)
+                return (width, height);
+        }
+        catch (IOException)
+        {
+        }
+        catch (PlatformNotSupportedException)
+        {
+        }
+
+        return (PreferredWindowWidth, PreferredWindowHeight);
+    }
+
+    private static int GetViewportWidth() => GetViewportSize().Width;
 }
